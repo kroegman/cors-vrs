@@ -241,9 +241,9 @@ extern int cors_initnav(cors_nav_t *nav)
     int i;
 
     memset(&nav->data, 0, sizeof(nav_t));
-    if (!(nav->data.eph =(eph_t *)malloc(sizeof(eph_t ) * MAXSAT * 4 )) ||
-        !(nav->data.geph=(geph_t*)malloc(sizeof(geph_t) * NSATGLO * 2)) ||
-        !(nav->data.seph=(seph_t*)malloc(sizeof(seph_t) * NSATSBS * 2))) {
+    if (!(nav->data.eph =(eph_t *)malloc(sizeof(eph_t )*MAXSAT*4))||
+        !(nav->data.geph=(geph_t*)malloc(sizeof(geph_t)*NSATGLO*2))||
+        !(nav->data.seph=(seph_t*)malloc(sizeof(seph_t)*NSATSBS*2))) {
         log_trace(1,"cors_initnav: malloc error\n");
         return 0;
     }
