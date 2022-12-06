@@ -822,7 +822,6 @@ static void con_thread(void *arg)
                 if (!strcmp(args[0],"shutdown")) {
                     vt_printf(con->vt,"cors server shutdown ...\n");
                     sleepms(1000);
-                    intflg=1;
                     con->state=0;
                 }
                 break;
@@ -831,7 +830,7 @@ static void con_thread(void *arg)
                 break;
         }
     }
-    vt_close(con->vt);
+    intflg=1;
 }
 
 static con_t *con_open(const char *dev)
@@ -856,8 +855,7 @@ static con_t *con_open(const char *dev)
 static void con_close(con_t *con)
 {
     if (!con) return;
-    con->state=con->vt->state=0;
-    uv_thread_join(con->thread);
+    vt_close(con->vt);
     free(con);
 }
 
@@ -888,9 +886,9 @@ int main(int argc, char **argv)
     signal(SIGTERM,sigshut);
     signal(SIGHUP ,SIG_IGN);
 
-    if (start) startcors(NULL);
+    if (start) startcors(con->vt);
     while (!intflg) sleepms(100);
-    stopcors(NULL);
+    stopcors(con->vt);
 
     con_close(con);
     log_trace_close();
