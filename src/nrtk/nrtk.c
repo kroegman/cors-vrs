@@ -13,8 +13,9 @@
 #define NRTK_WAIT_SYNC            1
 #define NTRK_MAX_BLS    64
 
-extern int vrs_add_vsta(cors_vrs_t *vrs, const char *name, const double *pos);
-extern int vrs_del_vsta(cors_vrs_t *vrs, const char *name);
+extern int  vrs_add_vsta(cors_vrs_t *vrs, const char *name, const double *pos);
+extern int  vrs_del_vsta(cors_vrs_t *vrs, const char *name);
+extern void vrs_upd_vsta(cors_vrs_t *vrs);
 
 typedef struct nrtk_add_source {
     int srcid;
@@ -132,9 +133,11 @@ static void nrtk_add_source(cors_nrtk_t *nrtk, nrtk_add_source_t *data)
 {
     cors_dtrig_net_t *dtg=&nrtk->dtrig_net;
     cors_dtrig_edge_t *edge_add,*edge_del;
+    cors_vrs_t *vrs=&nrtk->cors->vrs;
 
     cors_dtrignet_add_vertex(dtg,data->pos,data->srcid,&edge_add,&edge_del);
     nrtk_upd_bls(nrtk,&edge_add,&edge_del);
+    vrs_upd_vsta(vrs);
     free(data);
 }
 
@@ -142,9 +145,11 @@ static void nrtk_del_source(cors_nrtk_t *nrtk, nrtk_delete_source_t *data)
 {
     cors_dtrig_net_t *dtg=&nrtk->dtrig_net;
     cors_dtrig_edge_t *edge_add,*edge_del;
+    cors_vrs_t *vrs=&nrtk->cors->vrs;
 
     cors_dtrignet_del_vertex(dtg,data->srcid,&edge_add,&edge_del);
     nrtk_upd_bls(nrtk,&edge_add,&edge_del);
+    vrs_upd_vsta(vrs);
     free(data);
 }
 
