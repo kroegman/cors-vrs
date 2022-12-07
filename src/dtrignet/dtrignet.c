@@ -356,10 +356,10 @@ extern void cors_dtrignet_upd_vertex(cors_dtrig_net_t *dtrig_net, const double *
 extern void cors_dtrignet_del_vertex(cors_dtrig_net_t *dtrig_net, int srcid, cors_dtrig_edge_t **edge_add,
                                      cors_dtrig_edge_t **edge_del)
 {
-    cors_dtrig_vertex_t *s,*t;
+    cors_dtrig_vertex_t *s,*t,*q;
 
     HASH_FIND_INT(dtrig_net->vertexs,&srcid,s);
-    if (!s) return;
+    if (!(q=s)) return;
     HASH_DEL(dtrig_net->vertexs,s);
     cors_dtrignet_build(dtrig_net,edge_add,edge_del);
 
@@ -368,6 +368,24 @@ extern void cors_dtrignet_del_vertex(cors_dtrig_net_t *dtrig_net, int srcid, cor
         vertex_kdtree_insert(dtrig_net->vts_kdtree,s);
     }
     upd_dtrig_edge(dtrig_net);
+
+    cors_dtrig_vertex_q_t *vv,*pp;
+    cors_vrs_sta_q_t *vs,*vq;
+    cors_dtrig_edge_q_t *eq,*tt;
+
+    HASH_ITER(hh,q->vt_list,vv,pp) {
+        HASH_DEL(q->vt_list,vv);
+        free(vv);
+    }
+    HASH_ITER(hh,q->edge_list,eq,tt) {
+        HASH_DEL(q->edge_list,eq);
+        free(eq);
+    }
+    HASH_ITER(hh,q->vsta_list,vs,vq) {
+        HASH_DEL(q->vsta_list,vs);
+        free(vs);
+    }
+    free(q);
 }
 
 extern void cors_dtrignet_del_edge(cors_dtrig_net_t *dtrignet, int srcid1, int srcid2)
