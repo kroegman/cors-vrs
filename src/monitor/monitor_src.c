@@ -7,7 +7,7 @@
  *-----------------------------------------------------------------------------*/
 #include "cors.h"
 
-extern int monitor_src_str(const cors_monitor_t *monitor, const cors_monitor_src_t *m_pnt, const ssat_t *ssat,
+extern int monitor_src_str(const cors_monitor_t *monitor, const cors_monitor_src_t *m_src, const ssat_t *ssat,
                            const sol_t *sol, const obs_t *obs, char *buff);
 
 static void on_rsp_cb(uv_write_t* req, int status)
@@ -15,14 +15,14 @@ static void on_rsp_cb(uv_write_t* req, int status)
     free(req);
 }
 
-static int send_monitor_pnt_data(cors_monitord_t *md, ssat_t *ssat, sol_t *sol, obs_t *obs)
+static int send_monitor_src_data(cors_monitord_t *md, ssat_t *ssat, sol_t *sol, obs_t *obs)
 {
     static char buff[32768];
     int ret;
     uv_write_t *wreq;
     uv_buf_t buf;
 
-    buf.len=monitor_src_str(md->monitor,&md->m_pnt,ssat,sol,obs,buff);
+    buf.len=monitor_src_str(md->monitor,&md->m_src,ssat,sol,obs,buff);
     buf.base=buff;
     wreq=malloc(sizeof(uv_write_t));
 
@@ -120,20 +120,20 @@ static void monitor_src_updmtbl(cors_monitor_t *monitor, cors_monitord_t *m_cur,
     }
     HASH_FIND_PTR(q_cur->md_tbl,&str,mf);
     if (!mf) {
-        if (strcmp(m_cur->m_pnt.name,"")!=0&&strcmp(m_cur->m_pnt.name,argv[2])!=0) {
-            HASH_FIND_STR(qs->q_tbl,m_cur->m_pnt.name,q);
+        if (strcmp(m_cur->m_src.name,"")!=0&&strcmp(m_cur->m_src.name,argv[2])!=0) {
+            HASH_FIND_STR(qs->q_tbl,m_cur->m_src.name,q);
             HASH_FIND_PTR(q->md_tbl,&str,mf);
             HASH_DEL(q->md_tbl,mf);
-            upd_monitor_src_info(&mf->m_pnt,argv);
+            upd_monitor_src_info(&mf->m_src,argv);
             HASH_ADD_PTR(q_cur->md_tbl,conn,mf);
         }
         else {
             mf=monitord_src_new(monitor,str,argv);
             HASH_ADD_PTR(q_cur->md_tbl,conn,mf);
-            upd_monitor_src_info(&mf->m_pnt,argv);
+            upd_monitor_src_info(&mf->m_src,argv);
         }
     }
-    upd_monitor_src_info(&m_cur->m_pnt,argv);
+    upd_monitor_src_info(&m_cur->m_src,argv);
     uv_mutex_unlock(&qs->lock);
 }
 
@@ -150,7 +150,7 @@ extern void monitor_src_updconn(uv_stream_t *str, char *buf)
 
     do_parse_argv(buf,argv);
 
-    log_trace(1,"[0x%08x] [0x%08x] %s %s\n",str,md,argv[2],md->m_pnt.name);
+    log_trace(1,"[0x%08x] [0x%08x] %s %s\n",str,md,argv[2],md->m_src.name);
 
     if (strcmp(argv[2],"")==0) {
         return;
@@ -190,7 +190,7 @@ static void do_monitor_pnt_work(monitor_src_task_t *data)
     }
     cors_monitord_t *m,*d;
     HASH_ITER(hh,q->md_tbl,m,d) {
-        if (send_monitor_pnt_data(m,data->ssat,&data->sol,&data->obs)<0) {
+        if (send_monitor_src_data(m,data->ssat,&data->sol,&data->obs)<0) {
             cors_monitor_del(m->monitor,m);
         }
     }
@@ -263,7 +263,7 @@ extern void monitor_src_delete_monitor(cors_monitor_src_qs_t *qs, cors_monitord_
 
     cors_monitor_src_q_t *q;
     cors_monitord_t *t;
-    HASH_FIND_STR(qs->q_tbl,md->m_pnt.name,q);
+    HASH_FIND_STR(qs->q_tbl,md->m_src.name,q);
     if (q) {
         HASH_FIND_PTR(q->md_tbl,&md->conn,t);
         if (t) {HASH_DEL(q->md_tbl,t); free(t);}
