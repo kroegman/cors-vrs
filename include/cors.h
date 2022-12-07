@@ -199,7 +199,7 @@ typedef struct cors_monitor_bsta_distr {
 
 typedef struct cors_monitord {
     uv_tcp_t *conn;
-    cors_monitor_src_t m_pnt;
+    cors_monitor_src_t m_src;
     struct cors_monitor *monitor;
     UT_hash_handle hh;
 } cors_monitord_t;
