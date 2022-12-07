@@ -617,4 +617,7 @@ extern int vrs_del_vsta(cors_vrs_t *vrs, const char *name)
     free(vsta); return 1;
 }
 
-
+extern void vrs_upd_vsta(cors_vrs_t *vrs)
+{
+    return upd_vrs_stas(vrs);
+}
