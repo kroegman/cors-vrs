@@ -366,8 +366,7 @@ extern void cors_updblsol(cors_blsols_t *blsols, cors_baseline_t *bl, const rtk_
     sprintf(id,"%d->%d",base_srcid,rover_srcid);
     HASH_FIND_STR(blsols->data,id,blsol);
 
-    if (!blsol&&!(blsol=new_cors_blsol(&blsols->data,bl,
-                                       base_srcid,rover_srcid))) {
+    if (!blsol&&!(blsol=new_cors_blsol(&blsols->data,bl,base_srcid,rover_srcid))) {
         return;
     }
     blsol->rtk=*rtk;
