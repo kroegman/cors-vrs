@@ -5,7 +5,6 @@
  * version : $Revision: 1.1 $ $Date: 2008/07/17 21:48:06 $
  * history : 2022/11/17 1.0  new
  *-----------------------------------------------------------------------------*/
-#include <sched.h>
 #include "cors.h"
 
 static void close_cb(uv_async_t* handle)
