@@ -101,6 +101,7 @@ static void pnt_thread(void *arg)
 
     uv_timer_init(loop,pnt->timer_stat);
     uv_timer_start(pnt->timer_stat,on_timer_stat_cb,0,10000);
+    pnt->state=1;
 
     uv_run(loop,UV_RUN_DEFAULT);
 
@@ -146,6 +147,7 @@ static void add_pnt_task(cors_pnt_t *pnt, const obsd_t *obs, int n, int srcid)
 extern int cors_pnt_pos(cors_pnt_t *pnt, const obsd_t *obs, int n, int srcid)
 {
 #if CORS_PNT
+    if (pnt->state<=0) return 0;
     if (n<=0) return 0;
     add_pnt_task(pnt,obs,n,srcid);
     return 1;

@@ -309,7 +309,7 @@ static int valsol(sol_t *sol, const double *azel, const int *vsat, int n,
     /* chi-square validation of residuals */
     vv=dot(v,v,nv);
     if (nv>nx&&vv>chisqr[nv-nx-1]) {
-        sprintf(msg,"chi-square error nv=%d vv=%.1f cs=%.1f",nv,vv,chisqr[nv-nx-1]);
+        log_trace(1,"chi-square error nv=%d vv=%.1f cs=%.1f",nv,vv,chisqr[nv-nx-1]);
         return 0;
     }
     /* large GDOP check */
@@ -323,7 +323,7 @@ static int valsol(sol_t *sol, const double *azel, const int *vsat, int n,
     matcpy(sol->dops,dop,1,4);
 
     if (dop[0]<=0.0||dop[0]>opt->maxgdop) {
-        sprintf(msg,"gdop error nv=%d gdop=%.1f",nv,dop[0]);
+        log_trace(1,"gdop error nv=%d gdop=%.1f",nv,dop[0]);
         return 0;
     }
     return 1;

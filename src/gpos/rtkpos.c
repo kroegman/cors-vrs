@@ -542,45 +542,6 @@ static int test_sys(int sys, int m)
     }
     return 0;
 }
-/* detect measurement outlier on MAD------------------------------------------*/
-static int detoutl_MAD(const double *v, int nv, int *outl_ind, double thres)
-{
-    int i,outl_n=0;
-    double m,med;
-
-    if (nv<3) return 0;
-
-    med=median(v,nv); m=mad(v,nv);
-    for (i=0;i<nv;i++) {
-        if (fabs((v[i]-med)/(1.4826*m))<thres) continue;
-        outl_ind[outl_n++]=i;
-    }
-    return outl_n;
-}
-/* outlier detect for DD measurement------------------------------------------*/
-static void detect_outl(rtk_t *rtk, const double *v, const int *vflg, int nv,
-                        double *Ri, double *Rj)
-{
-    int i,np,nc,n,ip[NFREQ*MAXOBS],ic[NFREQ*MAXOBS],io[NFREQ*MAXOBS];
-    double vp[NFREQ*MAXOBS],vc[NFREQ*MAXOBS];
-
-    for (np=nc=i=0;i<nv;i++) {
-        if (DD_TYPE(vflg[i])==0) {vp[np]=v[i]; ip[np++]=i;}
-        if (DD_TYPE(vflg[i])==1) {vc[nc]=v[i]; ic[nc++]=i;}
-    }
-    if (np) {
-        n=detoutl_MAD(vp,np,io,3.0);
-        for (i=0;i<n;i++) {
-            if (rtk->ssat[DD_RSAT(vflg[ip[io[i]]])-1].slip[DD_FREQ(vflg[ip[io[i]]])]) continue;
-            rtk->ssat[DD_RSAT(vflg[ip[io[i]]])-1].vsat[DD_FREQ(vflg[ip[io[i]]])]=0;
-            Rj[ip[io[i]]]=SQR(30.0);
-        }
-    }
-    if (nc) {
-        n=detoutl_MAD(vc,nc,io,3.0);
-        for (i=0;i<n;i++) Rj[ic[io[i]]]=SQR(30.0);
-    }
-}
 /* generate valid states index------------------------------------------------*/
 static int valix(const prcopt_t *opt, const int *vflg, int nv, int *ix)
 {
@@ -605,11 +566,9 @@ static int ddres(rtk_t *rtk, const nav_t *nav, const obsd_t *obs, double dt, con
 {
     prcopt_t *opt=&rtk->opt;
     double bl,dr[3],posu[3],posr[3],didxi=0.0,didxj=0.0,*im,df;
-    double tropr[MAXOBS]={0},tropu[MAXOBS]={0},dtdxr[MAXOBS*3]={0},dtdxu[MAXOBS*3]={0};
-    double Ri[MAXOBS*NFREQ*2]={0},Rj[MAXOBS*NFREQ*2]={0},frq,*Hi=NULL;
-    int i,j,k,m,f,nv=0,nb[NFREQ*4*2+2]={0},b=0,sysi,sysj,nf=NF(opt),bi,bj;
-
-    log_trace(3,"ddres: dt=%.1f nx=%d ns=%d\n",dt,rtk->nx,ns);
+    double tropr[MAXOBS*2]={0},tropu[MAXOBS*2]={0},dtdxr[MAXOBS*3]={0},dtdxu[MAXOBS*3]={0};
+    double Ri[MAXOBS*NFREQ*8]={0},Rj[MAXOBS*NFREQ*8]={0},frq,*Hi=NULL;
+    int i,j,k,m,f,nv=0,nb[NFREQ*6*4]={0},b=0,sysi,sysj,nf=NF(opt),bi,bj;
 
     bl=baseline(x,rtk->rb,dr);
     ecef2pos(x,posu); ecef2pos(rtk->rb,posr);
@@ -624,124 +583,121 @@ static int ddres(rtk_t *rtk, const nav_t *nav, const obsd_t *obs, double dt, con
             tropr[i]=prectrop(rtk->sol.time,posr,1,azel+ir[i]*2,opt,x,dtdxr+i*3);
         }
     }
-    for (m=0;m<6;m++) /* m=0:GPS/SBS,1:GLO,2:GAL,3:BDS,4:QZS,5:IRN */
+    for (m=0;m<6;m++) { /* m=0:GPS/SBS,1:GLO,2:GAL,3:BDS,4:QZS,5:IRN */
+        for (f=opt->mode>PMODE_DGPS?0:nf;f<nf*2;f++) {
 
-    for (f=opt->mode>PMODE_DGPS?0:nf;f<nf*2;f++) {
-
-        /* search reference satellite with highest elevation */
-        for (i=-1,j=0;j<ns;j++) {
-            sysi=satsys(sat[j],NULL);
-            if (!test_sys(sysi,m)) continue;
-            if (!validobs(iu[j],ir[j],f,nf,y)) continue;
-            if (i<0||azel[1+iu[j]*2]>=azel[1+iu[i]*2]) i=j;
-        }
-        if (i<0) continue;
-
-        /* make DD (double difference) */
-        for (j=0;j<ns;j++) {
-            if (i==j) continue;
-            sysi=satsys(sat[i],NULL); sysj=satsys(sat[j],NULL);
-            frq=freq[f%nf+iu[i]*nf];
-
-            if (!test_sys(sysj,m)) continue;
-            if (!validobs(iu[j],ir[j],f,nf,y)) continue;
-            if (!rtk->ssat[sat[j]-1].vs) continue;
-
-            if (f<nf) {
-                rtk->ssat[sat[j]-1].dd[f]=x[IB(sat[i],f,opt)]-x[IB(sat[j],f,opt)];
+            /* search reference satellite with highest elevation */
+            for (i=-1,j=0;j<ns;j++) {
+                sysi=satsys(sat[j],NULL);
+                if (!test_sys(sysi,m)) continue;
+                if (!validobs(iu[j],ir[j],f,nf,y)) continue;
+                if (i<0||azel[1+iu[j]*2]>=azel[1+iu[i]*2]) i=j;
             }
-            rtk->ssat[sat[i]-1].refsat[f%nf]=sat[i];
-            rtk->ssat[sat[j]-1].refsat[f%nf]=sat[i];
+            if (i<0) continue;
 
-            if (H) {
-                Hi=H+nv*rtk->nx;
-                memset(Hi,0,sizeof(double)*rtk->nx);
-            }
-            /* DD residual */
-            v[nv]=(y[f+iu[i]*nf*2]-y[f+ir[i]*nf*2])-(y[f+iu[j]*nf*2]-y[f+ir[j]*nf*2]);
+            /* make DD (double difference) */
+            for (j=0;j<ns;j++) {
+                if (i==j) continue;
+                sysi=satsys(sat[i],NULL); sysj=satsys(sat[j],NULL);
+                frq=freq[f%nf+iu[i]*nf];
 
-            /* partial derivatives by rover position */
-            if (H) {
-                for (k=0;k<3;k++) {
-                    Hi[k]=-e[k+iu[i]*3]+e[k+iu[j]*3];
+                if (!test_sys(sysj,m)) continue;
+                if (!validobs(iu[j],ir[j],f,nf,y)) continue;
+                if (!rtk->ssat[sat[j]-1].vs) continue;
+
+                if (f<nf) {
+                    rtk->ssat[sat[j]-1].dd[f]=x[IB(sat[i],f,opt)]-x[IB(sat[j],f,opt)];
                 }
-            }
-            /* DD ionospheric delay term */
-            if (opt->ionoopt==IONOOPT_EST) {
-                didxi=(f<nf?-1.0:1.0)*im[i]*SQR(FREQ1/frq);
-                didxj=(f<nf?-1.0:1.0)*im[j]*SQR(FREQ1/frq);
-                v[nv]-=didxi*x[II(sat[i],opt)]-didxj*x[II(sat[j],opt)];
+                rtk->ssat[sat[i]-1].refsat[f%nf]=sat[i];
+                rtk->ssat[sat[j]-1].refsat[f%nf]=sat[i];
+
                 if (H) {
-                    Hi[II(sat[i],opt)]= didxi;
-                    Hi[II(sat[j],opt)]=-didxj;
+                    Hi=H+nv*rtk->nx;
+                    memset(Hi,0,sizeof(double)*rtk->nx);
                 }
-            }
-            /* DD tropospheric delay term */
-            if (opt->tropopt==TROPOPT_EST||opt->tropopt==TROPOPT_ESTG) {
-                v[nv]-=(tropu[i]-tropu[j])-(tropr[i]-tropr[j]);
-                for (k=0;k<(opt->tropopt<TROPOPT_ESTG?1:3);k++) {
-                    if (!H) continue;
-                    Hi[IT(0,opt)+k]= (dtdxu[k+i*3]-dtdxu[k+j*3]);
-                    Hi[IT(1,opt)+k]=-(dtdxr[k+i*3]-dtdxr[k+j*3]);
-                }
-            }
-            /* DD phase-bias term */
-            if (f<nf) {
-                if (opt->ionoopt!=IONOOPT_IFLC) {
-                    v[nv]-=CLIGHT/freq[f%nf+iu[i]*nf]*x[IB(sat[i],f,opt)]-CLIGHT/freq[f%nf+iu[j]*nf]*x[IB(sat[j],f,opt)];
-                    if (H) {
-                        Hi[IB(sat[i],f,opt)]= CLIGHT/freq[f%nf+iu[i]*nf];
-                        Hi[IB(sat[j],f,opt)]=-CLIGHT/freq[f%nf+iu[j]*nf];
+                /* DD residual */
+                v[nv]=(y[f+iu[i]*nf*2]-y[f+ir[i]*nf*2])-(y[f+iu[j]*nf*2]-y[f+ir[j]*nf*2]);
+
+                /* partial derivatives by rover position */
+                if (H) {
+                    for (k=0;k<3;k++) {
+                        Hi[k]=-e[k+iu[i]*3]+e[k+iu[j]*3];
                     }
+                }
+                /* DD ionospheric delay term */
+                if (opt->ionoopt==IONOOPT_EST) {
+                    didxi=(f<nf?-1.0:1.0)*im[i]*SQR(FREQ1/frq);
+                    didxj=(f<nf?-1.0:1.0)*im[j]*SQR(FREQ1/frq);
+                    v[nv]-=didxi*x[II(sat[i],opt)]-didxj*x[II(sat[j],opt)];
+                    if (H) {
+                        Hi[II(sat[i],opt)]= didxi;
+                        Hi[II(sat[j],opt)]=-didxj;
+                    }
+                }
+                /* DD tropospheric delay term */
+                if (opt->tropopt==TROPOPT_EST||opt->tropopt==TROPOPT_ESTG) {
+                    v[nv]-=(tropu[i]-tropu[j])-(tropr[i]-tropr[j]);
+                    for (k=0;k<(opt->tropopt<TROPOPT_ESTG?1:3);k++) {
+                        if (!H) continue;
+                        Hi[IT(0,opt)+k]= (dtdxu[k+i*3]-dtdxu[k+j*3]);
+                        Hi[IT(1,opt)+k]=-(dtdxr[k+i*3]-dtdxr[k+j*3]);
+                    }
+                }
+                /* DD phase-bias term */
+                if (f<nf) {
+                    if (opt->ionoopt!=IONOOPT_IFLC) {
+                        v[nv]-=CLIGHT/freq[f%nf+iu[i]*nf]*x[IB(sat[i],f,opt)]-CLIGHT/freq[f%nf+iu[j]*nf]*x[IB(sat[j],f,opt)];
+                        if (H) {
+                            Hi[IB(sat[i],f,opt)]= CLIGHT/freq[f%nf+iu[i]*nf];
+                            Hi[IB(sat[j],f,opt)]=-CLIGHT/freq[f%nf+iu[j]*nf];
+                        }
+                    }
+                    else {
+                        v[nv]-=x[IB(sat[i],f,opt)]-x[IB(sat[j],f,opt)];
+                        if (H) {
+                            Hi[IB(sat[i],f,opt)]= 1.0;
+                            Hi[IB(sat[j],f,opt)]=-1.0;
+                        }
+                    }
+                }
+                if (f<nf) rtk->ssat[sat[j]-1].resc[f%nf]=v[nv];
+                else      rtk->ssat[sat[j]-1].resp[f%nf]=v[nv];
+
+                /* test innovation */
+                if (opt->maxinno>0.0&&fabs(v[nv])>opt->maxinno) {
+                    if (f<nf) {
+                        rtk->ssat[sat[i]-1].rejc[f]++;
+                        rtk->ssat[sat[j]-1].rejc[f]++;
+                    }
+                    log_trace(2,"outlier rejected (sat=%3d-%3d %s%d v=%.3f)\n",sat[i],sat[j],f<nf?"L":"P",f%nf+1,v[nv]);
+                    continue;
+                }
+                /* SD (single-differenced) measurement error variances */
+                Ri[nv]=varerr(sat[i],sysi,azel[1+iu[i]*2],bl,dt,f,opt);
+                Rj[nv]=varerr(sat[j],sysj,azel[1+iu[j]*2],bl,dt,f,opt);
+
+                /* set valid data flags */
+                if (opt->mode>PMODE_DGPS) {
+                    if (f<nf) rtk->ssat[sat[i]-1].vsat[f]=rtk->ssat[sat[j]-1].vsat[f]=1;
                 }
                 else {
-                    v[nv]-=x[IB(sat[i],f,opt)]-x[IB(sat[j],f,opt)];
-                    if (H) {
-                        Hi[IB(sat[i],f,opt)]= 1.0;
-                        Hi[IB(sat[j],f,opt)]=-1.0;
-                    }
+                    rtk->ssat[sat[i]-1].vsat[f-nf]=rtk->ssat[sat[j]-1].vsat[f-nf]=1;
                 }
-            }
-            if (f<nf) rtk->ssat[sat[j]-1].resc[f%nf]=v[nv];
-            else      rtk->ssat[sat[j]-1].resp[f%nf]=v[nv];
+                char bsat[8],rsat[8];
+                satno2id(sat[i],bsat);
+                satno2id(sat[j],rsat);
 
-            /* test innovation */
-            if (opt->maxinno>0.0&&fabs(v[nv])>opt->maxinno) {
-                if (f<nf) {
-                    rtk->ssat[sat[i]-1].rejc[f]++;
-                    rtk->ssat[sat[j]-1].rejc[f]++;
-                }
-                log_trace(2,"outlier rejected (sat=%3d-%3d %s%d v=%.3f)\n",sat[i],sat[j],f<nf?"L":"P",f%nf+1,v[nv]);
-                continue;
-            }
-            /* SD (single-differenced) measurement error variances */
-            Ri[nv]=varerr(sat[i],sysi,azel[1+iu[i]*2],bl,dt,f,opt);
-            Rj[nv]=varerr(sat[j],sysj,azel[1+iu[j]*2],bl,dt,f,opt);
+                log_trace(3,"sat=%3d-%3d %4s-%4s %s%d v=%13.3f R=%8.6f %8.6f el=%5.1lf SNR=%5.1lf DD-AMB: %10.3lf fix=%d lock=%d\n",sat[i],
+                          sat[j],bsat,rsat,f<nf?"L":"P",f%nf+1,v[nv],Ri[nv],Rj[nv],rtk->ssat[sat[j]-1].azel[1]*R2D,rtk->ssat[sat[j]-1].snr[f%nf]*SNR_UNIT,
+                          f<nf?x[IB(sat[i],f,opt)]-x[IB(sat[j],f,opt)]:0.0,rtk->ssat[sat[j]-1].fix[f%nf],rtk->ssat[sat[j]-1].lock[f%nf]);
 
-            /* set valid data flags */
-            if (opt->mode>PMODE_DGPS) {
-                if (f<nf) rtk->ssat[sat[i]-1].vsat[f]=rtk->ssat[sat[j]-1].vsat[f]=1;
+                vflg[nv++]=(sat[i]<<16)|(sat[j]<<8)|((f<nf?0:1)<<4)|(f%nf);
+                nb[b]++;
             }
-            else {
-                rtk->ssat[sat[i]-1].vsat[f-nf]=rtk->ssat[sat[j]-1].vsat[f-nf]=1;
-            }
-            char bsat[8],rsat[8];
-            satno2id(sat[i],bsat);
-            satno2id(sat[j],rsat);
-
-            log_trace(3,"sat=%3d-%3d %4s-%4s %s%d v=%13.3f R=%8.6f %8.6f el=%5.1lf SNR=%5.1lf DD-AMB: %10.3lf fix=%d\n",sat[i],
-                      sat[j],bsat,rsat,f<nf?"L":"P",f%nf+1,v[nv],Ri[nv],Rj[nv],rtk->ssat[sat[j]-1].azel[1]*R2D,rtk->ssat[sat[j]-1].snr[f%nf]*SNR_UNIT,
-                      f<nf?x[IB(sat[i],f,opt)]-x[IB(sat[j],f,opt)]:0.0,rtk->ssat[sat[j]-1].fix[f%nf]);
-
-            vflg[nv++]=(sat[i]<<16)|(sat[j]<<8)|((f<nf?0:1)<<4)|(f%nf);
-            nb[b]++;
+            b++;
         }
-        b++;
     }
     /* end of system loop */
-
-    /* detect measurement outlier */
-    detect_outl(rtk,v,vflg,nv,Ri,Rj);
 
     /* generate valid states index */
     if (ix) *nx=valix(opt,vflg,nv,ix);
@@ -898,10 +854,11 @@ static int inherit_amb(rtk_t *rtk, const nav_t *nav, const obsd_t *obs, const in
                        const int *vflg, int nv, int *amb_ind, double *bias, double *xa, int *ix)
 {
     int i,nb,na=rtk->na,m,ind[2*MAXOBS],ixb[2*MAXOBS];
+    int minnb=5;
 
-    if (rtk->opt.modear!=ARMODE_FIXHOLD||rtk->sol.ratio<rtk->opt.thresar[0]) {
-        return 0;
-    }
+    if (rtk->opt.modear!=ARMODE_FIXHOLD) return 0;
+
+    /* inherit double-differenced ambiguity */
     for (nb=i=0;i<nv;i++) {
         if (rtk->ssat[DD_RSAT(vflg[i])-1].fix[DD_FREQ(vflg[i])]!=3) continue;
         if (DD_TYPE(vflg[i])) continue;
@@ -911,12 +868,12 @@ static int inherit_amb(rtk_t *rtk, const nav_t *nav, const obsd_t *obs, const in
         bias[nb]=ROUND(rtk->x[ix[nb*2]]-rtk->x[ix[nb*2+1]]);
         amb_ind[nb++]=i;
     }
-    if (nb<=0) return 0;
+    if (nb<=minnb) return 0;
 
+    /* fix DD ambiguity on satellite elevation[>elmin] */
     for (m=i=0;i<nv;i++) {
         if (rtk->ssat[DD_RSAT(vflg[i])-1].fix[DD_FREQ(vflg[i])]==3) continue;
         if (!is_fixamb(rtk,vflg[i],rtk->opt.elmin)) continue;
-
         ixb[m*2+0]=IB(DD_BSAT(vflg[i]),DD_FREQ(vflg[i]),&rtk->opt);
         ixb[m*2+1]=IB(DD_RSAT(vflg[i]),DD_FREQ(vflg[i]),&rtk->opt);
         ind[m++]=i;
@@ -1131,7 +1088,7 @@ static int relpos(rtk_t *rtk, const obsd_t *obs, int nu, int nr, const nav_t *na
     double e[MAXOBS*2*3]={0},azel[MAXOBS*2*2]={0},freq[MAXOBS*2*NFREQ]={0};
     double *v,*H,*R,*xp,*Pp,*xa,*bias,dt;
     int i,j,f,nb,r,b,n=nu+nr,ns,nv,sat[MAXOBS*2],iu[MAXOBS*2],ir[MAXOBS*2],amb_ind[MAXOBS*NF(opt)],niter;
-    int info,vflg[MAXOBS*NFREQ*2*2+1],svh[MAXOBS*2],reset=0,nf=NF(opt),ix[NX(opt)],nx;
+    int info,vflg[MAXOBS*NFREQ*6],svh[MAXOBS*2],reset=0,nf=NF(opt),ix[NX(opt)],nx;
     int stat=rtk->opt.mode<=PMODE_DGPS?SOLQ_DGPS:SOLQ_FLOAT;
 
     log_trace(3,"relpos: nx=%d nu=%d nr=%d\n",rtk->nx,nu,nr);
@@ -1266,7 +1223,7 @@ extern void rtkinit(rtk_t *rtk, const prcopt_t *opt)
     rtk->bias=zeros(rtk->nx,1);
     rtk->v=zeros(MAXOBS*NFREQ*4,1);
     rtk->H=zeros(MAXOBS*NFREQ*4,rtk->nx);
-    rtk->R=zeros(MAXOBS*NFREQ*4,MAXOBS*NFREQ*2);
+    rtk->R=zeros(MAXOBS*NFREQ*4,MAXOBS*NFREQ*4);
     rtk->nfix=0;
     for (i=0;i<MAXSAT;i++) {
         rtk->ambc[i]=ambc0; rtk->ssat[i]=ssat0;

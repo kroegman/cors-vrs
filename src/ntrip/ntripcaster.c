@@ -85,7 +85,6 @@ static void ntrip_caster_thread(void *caster_arg)
                 continue;
             }
         }
-        info->src=s;
         strcpy(s->name,info->name);
         s->ID=info->ID;
         s->type=info->type;
@@ -94,8 +93,7 @@ static void ntrip_caster_thread(void *caster_arg)
 
         HASH_FIND(hh,ntrip->info_tbl[0],s->name,strlen(s->name),itmp);
         if (itmp) {
-            HASH_DEL(argv->info_tbl,info);
-            free(info);
+            if (!itmp->src) itmp->src=s;
             continue;
         }
         itmp=calloc(1,sizeof(*info));
@@ -104,15 +102,18 @@ static void ntrip_caster_thread(void *caster_arg)
         HASH_ADD(ii,ntrip->info_tbl[1],ID,sizeof(int),itmp);
         kd_insert(ntrip->src_kdtree,info->pos,itmp);
 
+        log_trace(1,"ntrip add source: %s %d [src=%p]\n",itmp->name,itmp->ID,s);
+    }
+    HASH_ITER(hh,argv->info_tbl,info,tmp) {
         HASH_DEL(argv->info_tbl,info);
         free(info);
     }
+    free(argv);
+
     uv_run(loop,UV_RUN_DEFAULT);
     close_uv_loop(loop);
-
     ctr->state=0;
     free(loop);
-    free(argv);
     log_trace(3,"ntrip caster stop ok\n");
 }
 

@@ -12,9 +12,10 @@
 * history : 2021/04/12 1.0 new
 *-----------------------------------------------------------------------------*/
 #include "rtklib.h"
+#include "log.h"
 
 /* constants/macros ----------------------------------------------------------*/
-#define LOOPMAX     500000           /* maximum count of search loop */
+#define LOOPMAX     1E10           /* maximum count of search loop */
 
 #define SGN(x)      ((x)<=0.0?-1.0:1.0)
 #define ROUND(x)    (floor((x)+0.5))
@@ -39,7 +40,7 @@ static int LD(int n, const double *Q, double *L, double *D)
         for (j=0;j<=i;j++) L[i+j*n]/=L[i+i*n];
     }
     free(A);
-    if (info) fprintf(stderr,"%s: LD factorization error\n",__FILE__);
+    if (info) log_trace(1,"%s: LD factorization error\n",__FILE__);
     return info;
 }
 /* integer gauss transformation ----------------------------------------------*/
@@ -143,7 +144,7 @@ static int search(int n, int m, const double *L, const double *D,
     free(S); free(dist); free(zb); free(z); free(step);
     
     if (c>=LOOPMAX) {
-        fprintf(stderr,"%s : search loop count overflow\n",__FILE__);
+        log_trace(1,"%s : search loop count overflow\n",__FILE__);
         return -1;
     }
     return 0;

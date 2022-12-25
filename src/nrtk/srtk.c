@@ -217,9 +217,11 @@ static void rtk_work_thread(void *srtk_arg)
 {
     cors_srtk_t *srtk=(cors_srtk_t*)srtk_arg;
     set_thread_rt_priority();
+    srtk->state[1]=1;
 
-    while (srtk->state) {
-        if (srtk->state<=1) continue;
+    while (srtk->state[1]) {
+        uv_sleep(1);
+        if (!srtk->state[0]) continue;
         rtk_process(srtk);
     }
 }
@@ -288,12 +290,11 @@ static void baseline_rtk_work(cors_srtk_t *srtk)
 static void rtk_thread(void *srtk_arg)
 {
     cors_srtk_t *srtk=(cors_srtk_t*)srtk_arg;
-    srtk->state++;
-
     set_thread_rt_priority();
+    srtk->state[0]=1;
 
-    while (srtk->state) {
-        if (srtk->state<=1) continue;
+    while (srtk->state[0]) {
+        uv_sleep(1);
         baseline_rtk_work(srtk);
         add_baseline_work(srtk);
         del_baseline_work(srtk);
@@ -398,8 +399,6 @@ static void srtk_init(cors_srtk_t *srtk, cors_nrtk_t *nrtk, cors_t *cors)
     QUEUE_INIT(&srtk->rtkpos_queue);
     QUEUE_INIT(&srtk->addbl_queue);
     QUEUE_INIT(&srtk->delbl_queue);
-    QUEUE_INIT(&srtk->delbl_queue);
-    srtk->state++;
 }
 
 static void read_opts(cors_srtk_t *srtk)
@@ -431,10 +430,10 @@ extern int cors_srtk_start(cors_srtk_t *srtk, cors_t *cors, cors_nrtk_t *nrtk, c
 
 extern int cors_srtk_close(cors_srtk_t *srtk)
 {
-    srtk->state=0;
-
-    uv_thread_join(&srtk->thread[1]);
+    srtk->state[0]=0;
+    srtk->state[1]=0;
     uv_thread_join(&srtk->thread[0]);
+    uv_thread_join(&srtk->thread[1]);
 
     cors_baseline_t *bl,*bltmp;
     HASH_ITER(hh,srtk->bls.data,bl,bltmp) {
@@ -445,7 +444,7 @@ extern int cors_srtk_close(cors_srtk_t *srtk)
 
 extern int cors_srtk_add_baseline(cors_srtk_t *srtk, int base_srcid, int rover_srcid)
 {
-    if (!srtk->state) return 0;
+    if (!srtk->state[0]) return 0;
 
     uv_mutex_lock(&srtk->addbl_lock);
     add_baseline_t *data=new_add_baseline(srtk,base_srcid,rover_srcid);
@@ -471,7 +470,7 @@ static del_baseline_t* new_del_baseline(cors_srtk_t *srtk, int base_srcid, int r
 
 extern int cors_srtk_del_baseline(cors_srtk_t *srtk, int base_srcid, int rover_srcid)
 {
-    if (!srtk->state) return 0;
+    if (!srtk->state[0]) return 0;
 
     del_baseline_t *data=new_del_baseline(srtk,base_srcid,rover_srcid);
     if (!data) return 0;

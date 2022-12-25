@@ -13,6 +13,7 @@
 #define VRS_OUT_OBSRNX           1
 #define VRS_BLSOL_VSTA           1
 #define VRS_HIGH_RESOLUTION      1
+#define VRS_NEAREST_BL           0
 
 typedef struct upd_vrs_task {
     obs_t mobs;
@@ -24,9 +25,9 @@ typedef struct upd_vrs_task {
     QUEUE q;
 } upd_vrs_task_t;
 
+static int mID=0;
 static int generate_vsta_id()
 {
-    static int mID=0;
     return -(++mID);
 }
 
@@ -183,8 +184,6 @@ static int upd_vrs_coef(const cors_vrs_sta_t *vsta, const cors_master_sta_t *mst
     for (m=i=0;i<n;i++) {
         if (fabs(timediff(msta->time,rtk[i].time))>age) continue;
         if (!rtk[i].ssat[sat-1].vsat[frq]) continue;
-        if ( rtk[i].ssat[sat-1].slip[frq]) continue;
-        if ( rtk[i].ssat[sat-1].lflg[frq]) continue;
         if ( rtk[i].ssat[sat-1].fix[frq]<2) continue;
         if (rtk[i].ssat[sat-1].refsat[frq]!=rtk[0].ssat[sat-1].refsat[frq]) continue;
         if (norm(rtk[i].bl,3)<=0.0) continue;
@@ -328,15 +327,66 @@ static upd_vrs_task_t* new_upd_vrs_task(cors_vrs_t *vrs, cors_vrs_sta_t *vsta, c
     return task;
 }
 
+static const rtk_t* vrs_near_bl(const cors_master_sta_t *msta, const cors_vrs_sta_t *vsta,
+                                const rtk_t **rtk, int n, int dire)
+{
+    int i,j=-1,d[64]={0};
+    double dr[3],pos[3],bl[3],e[3],hv,hm,dh,dp=1E6;
+    cors_dtrig_edge_q_t *q,*t;
+
+    for (i=0;i<3;i++) dr[i]=vsta->pos[i]-msta->pos[i];
+    ecef2pos(msta->pos,pos);
+    ecef2enu(pos,dr,e);
+    hv=atan2(e[0],e[1]);
+
+    i=0;
+    HASH_ITER(hh,msta->edge_list,q,t) {
+        if (!q->edge) {i++; continue;}
+        if (strcmp(q->edge->id,q->edge->bl->id)) d[i++]=-1;
+        else d[i++]=1;
+    }
+    for (i=0;i<n;i++) {
+        if (!rtk[i]||!d[i]) continue;
+        if (norm(rtk[i]->bl,3)<=0.0) continue;
+
+        bl[0]=rtk[i]->bl[0]*d[i];
+        bl[1]=rtk[i]->bl[1]*d[i];
+        bl[2]=rtk[i]->bl[2]*d[i];
+        ecef2enu(pos,bl,e);
+        hm=atan2(e[0],e[1]);
+
+        if ((dh=dire*(hm-hv))<0.0) dh+=2.0*PI;
+        if (j<0||dh<dp) j=i,dp=dh;
+    }
+    if (j>=0) {
+        i=0;
+        HASH_ITER(hh,msta->edge_list,q,t) {
+            if (i++==j) {
+                log_trace(1,"vrs near bl: %s [%6.3lf,%6.3lf]\n",q->edge->id,norm(q->edge->bl->sol->rtk.bl,3)/1E3,
+                          norm(rtk[j]->bl,3)/1E3);
+                break;
+            }
+        }
+    }
+    return j<0?NULL:rtk[j];
+}
+
 static int vrs_upd_dtrig(cors_vrs_t *vrs, cors_vrs_sta_t *vsta, const cors_master_sta_t *msta, const obs_t *mobs,
                          const rtk_t **rtk, int n)
 {
     cors_dtrig_edge_q_t *q,*t;
     cors_dtrig_edge_t *e;
-    const rtk_t *rtks[16];
-    int i,j,k,m,dire[64]={0};
+    const rtk_t *rtks[64],*rtkp;
+    int i,j,k,m=0,dire[64]={0};
 
-    for (j=-1,i=0;i<3;i++) {
+    vrs_near_bl(msta,vsta,rtk,n, 1);
+    vrs_near_bl(msta,vsta,rtk,n,-1);
+
+#if VRS_NEAREST_BL
+    if (!(rtkp=vrs_near_bl(msta,vsta,rtk,n, 1))) rtks[m++]=rtkp;
+    if (!(rtkp=vrs_near_bl(msta,vsta,rtk,n,-1))) rtks[m++]=rtkp;
+#else
+    for (m=0,j=-1,i=0;i<3;i++) {
         if (msta==vsta->trig->vt[i]) {j=i; break;}
     }
     if (j<0) return -1;
@@ -346,11 +396,19 @@ static int vrs_upd_dtrig(cors_vrs_t *vrs, cors_vrs_sta_t *vsta, const cors_maste
         k=0;
         HASH_ITER(hh,msta->edge_list,q,t) {
             if (q->edge!=e) {k++; continue;}
-            if (strcmp(q->edge->id,q->edge->bl->id)) dire[m]=-1.0;
-            else dire[m]=1.0;
-            rtks[m++]=rtk[k++]; break;
+            if (strcmp(q->edge->id,q->edge->bl->id)) dire[m]=-1;
+            else dire[m]=1;
+            rtks[m++]=rtk[k++];
+            log_trace(1,"vrs upd dtrig: [%2d] bl=%s %2d\n",msta->srcid,q->edge->bl->id,dire[m-1]);
+            break;
         }
     }
+    if (m<2) {
+        m=0;
+        if (!(rtkp=vrs_near_bl(msta,vsta,rtk,n, 1))) rtks[m++]=rtkp;
+        if (!(rtkp=vrs_near_bl(msta,vsta,rtk,n,-1))) rtks[m++]=rtkp;
+    }
+#endif
     if (m<=0) return -1;
 
     uv_mutex_lock(&vrs->upd_vrs_lock);
@@ -365,13 +423,13 @@ static int vrs_upd_subnet(cors_vrs_t *vrs, cors_vrs_sta_t *vsta, const cors_mast
                           const rtk_t **rtk, int n)
 {
     cors_dtrig_edge_q_t *q,*t;
-    const rtk_t *rtks[16];
+    const rtk_t *rtks[64];
     int i,j,m,dire[64]={0};
 
     HASH_ITER(hh,msta->edge_list,q,t) {
         if (!rtk[i]) {i++; continue;}
-        if (strcmp(q->edge->id,q->edge->bl->id)) dire[m]=-1.0;
-        else dire[m]=1.0;
+        if (strcmp(q->edge->id,q->edge->bl->id)) dire[m]=-1;
+        else dire[m]=1;
         rtks[m++]=rtk[i++];
     }
     for (i=m=0;i<n;i++) {
@@ -515,6 +573,8 @@ static void vrs_thread(void *vrs_arg)
     cors_vrs_t *vrs=vrs_arg;
     uv_loop_t *loop=uv_loop_new();
 
+    set_thread_rt_priority();
+
     vrs->upd_vrs=calloc(1,sizeof(uv_async_t));
     vrs->upd_vrs->data=vrs;
     uv_async_init(loop,vrs->upd_vrs,upd_vrs_process);
@@ -548,6 +608,7 @@ extern void cors_vrs_close(cors_vrs_t *vrs)
     uv_thread_join(&vrs->thread);
     vrs->cors=NULL;
     vrs->nrtk=NULL;
+    mID=0;
 
     cors_vrs_sta_t *s,*t;
     HASH_ITER(hh,vrs->stas.data,s,t) {
@@ -566,6 +627,7 @@ extern int vrs_add_vsta(cors_vrs_t *vrs, const char *name, const double *pos)
 
     HASH_FIND_STR(vrs->stas.data,name,sta);
     if (sta) return 0;
+    if (norm(pos,3)<=0) return 0;
 
     sta=calloc(1,sizeof(cors_vrs_sta_t));
     strcpy(sta->name,name);

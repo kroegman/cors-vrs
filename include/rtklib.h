@@ -56,7 +56,6 @@ extern "C" {
 #define ENAGAL
 #define ENACMP
 #define ENAQZS
-#define LAPACK
 
 #define FREQ1       1.57542E9           /* L1/E1/B1C  frequency (Hz) */
 #define FREQ2       1.22760E9           /* L2         frequency (Hz) */
@@ -203,7 +202,7 @@ extern "C" {
 #define MAXSAT      (NSATGPS+NSATGLO+NSATGAL+NSATQZS+NSATCMP+NSATIRN+NSATSBS+NSATLEO)
                                         /* max satellite number (1 to MAXSAT) */
 #ifndef MAXOBS
-#define MAXOBS      52                  /* max number of obs in an epoch */
+#define MAXOBS      96                  /* max number of obs in an epoch */
 #endif
 #define MAXRCV      64                  /* max receiver number (1 to MAXRCV) */
 #define MAXOBSTYPE  64                  /* max number of obs type in RINEX */

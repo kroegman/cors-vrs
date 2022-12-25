@@ -23,10 +23,10 @@ typedef struct nrtk_add_source {
     QUEUE q;
 } nrtk_add_source_t;
 
-typedef struct nrtk_delete_source {
+typedef struct nrtk_del_source {
     int srcid;
     QUEUE q;
-} nrtk_delete_source_t;
+} nrtk_del_source_t;
 
 typedef struct nrtk_add_vsta {
     double pos[3];
@@ -38,6 +38,25 @@ typedef struct nrtk_del_vsta {
     char name[32];
     QUEUE q;
 } nrtk_del_vsta_t;
+
+typedef struct nrtk_add_bl {
+    int base_srcid;
+    int rover_srcid;
+    QUEUE q;
+} nrtk_add_bl_t;
+
+typedef struct nrtk_del_bl {
+    int base_srcid;
+    int rover_srcid;
+    QUEUE q;
+} nrtk_del_bl_t;
+
+typedef struct nrtk_upd_bl {
+    int base_srcid;
+    int rover_srcid;
+    cors_baseline_t *bl;
+    QUEUE q;
+} nrtk_upd_bl_t;
 
 static void set_thread_rt_priority()
 {
@@ -69,7 +88,7 @@ static cors_srtk_t* new_srtk(cors_nrtk_t *nrtk)
         return NULL;
     }
     HASH_ADD_INT(nrtk->srtk,ID,srtk);
-    while (!srtk->state) uv_sleep(5);
+    while (srtk->state<2) uv_sleep(5);
     return srtk;
 }
 
@@ -141,7 +160,7 @@ static void nrtk_add_source(cors_nrtk_t *nrtk, nrtk_add_source_t *data)
     free(data);
 }
 
-static void nrtk_del_source(cors_nrtk_t *nrtk, nrtk_delete_source_t *data)
+static void nrtk_del_source(cors_nrtk_t *nrtk, nrtk_del_source_t *data)
 {
     cors_dtrig_net_t *dtg=&nrtk->dtrig_net;
     cors_dtrig_edge_t *edge_add,*edge_del;
@@ -167,17 +186,52 @@ static void nrtk_del_vsta(cors_nrtk_t *nrtk, nrtk_del_vsta_t *data)
     free(data);
 }
 
+static void nrtk_add_bl(cors_nrtk_t *nrtk, nrtk_add_bl_t *data)
+{
+    cors_dtrig_net_t *dtrignet=&nrtk->dtrig_net;
+    cors_dtrignet_add_edge(dtrignet,data->base_srcid,data->rover_srcid);
+    nrtk_add_baseline(nrtk,data->base_srcid,data->rover_srcid);
+    free(data);
+}
+
+static void nrtk_del_bl(cors_nrtk_t *nrtk, nrtk_del_bl_t *data)
+{
+    cors_dtrig_net_t *dtrignet=&nrtk->dtrig_net;
+    cors_srtk_t *s,*t;
+
+    cors_dtrignet_del_edge(dtrignet,data->base_srcid,data->rover_srcid);
+    HASH_ITER(hh,nrtk->srtk,s,t) {
+        cors_srtk_del_baseline(s,data->base_srcid,data->rover_srcid);
+    }
+    free(data);
+}
+
+static void nrtk_upd_bl(cors_nrtk_t *nrtk, nrtk_upd_bl_t *data)
+{
+    cors_dtrignet_upd_edge(&nrtk->dtrig_net,data->bl,data->base_srcid,data->rover_srcid);
+    free(data);
+}
+
 static void nrtk_init(cors_nrtk_t *nrtk)
 {
     nrtk_init_dtrignet(nrtk);
-    nrtk->state=1;
 
-    uv_mutex_init(&nrtk->delsrc_lock);
-    uv_mutex_init(&nrtk->addsrc_lock);
     QUEUE_INIT(&nrtk->delsrc_queue);
     QUEUE_INIT(&nrtk->addsrc_queue);
     QUEUE_INIT(&nrtk->addvsta_queue);
     QUEUE_INIT(&nrtk->delvsta_queue);
+    QUEUE_INIT(&nrtk->addbl_queue);
+    QUEUE_INIT(&nrtk->delbl_queue);
+    QUEUE_INIT(&nrtk->updbl_queue);
+
+    uv_mutex_init(&nrtk->delsrc_lock);
+    uv_mutex_init(&nrtk->addsrc_lock);
+    uv_mutex_init(&nrtk->addvsta_lock);
+    uv_mutex_init(&nrtk->delvsta_lock);
+    uv_mutex_init(&nrtk->addbl_lock);
+    uv_mutex_init(&nrtk->delbl_lock);
+    uv_mutex_init(&nrtk->updbl_lock);
+    nrtk->state=1;
 }
 
 static void do_add_source_work(cors_nrtk_t *nrtk)
@@ -199,7 +253,7 @@ static void do_del_source_work(cors_nrtk_t *nrtk)
         uv_mutex_lock(&nrtk->delsrc_lock);
 
         QUEUE *q=QUEUE_HEAD(&nrtk->delsrc_queue);
-        nrtk_delete_source_t *data=QUEUE_DATA(q,nrtk_delete_source_t,q);
+        nrtk_del_source_t *data=QUEUE_DATA(q,nrtk_del_source_t,q);
         QUEUE_REMOVE(q);
         uv_mutex_unlock(&nrtk->delsrc_lock);
         nrtk_del_source(nrtk,data);
@@ -232,7 +286,46 @@ static void do_del_vsta_work(cors_nrtk_t *nrtk)
     }
 }
 
-static int subnet_time_sync(cors_nrtk_t *nrtk, cors_dtrig_vertex_t *vt, rtk_t **rtk, obs_t **mobs)
+static void do_add_bl_work(cors_nrtk_t *nrtk)
+{
+    while (!QUEUE_EMPTY(&nrtk->addbl_queue)) {
+        uv_mutex_lock(&nrtk->addbl_lock);
+
+        QUEUE *q=QUEUE_HEAD(&nrtk->addbl_queue);
+        nrtk_add_bl_t *data=QUEUE_DATA(q,nrtk_add_bl_t,q);
+        QUEUE_REMOVE(q);
+        uv_mutex_unlock(&nrtk->addbl_lock);
+        nrtk_add_bl(nrtk,data);
+    }
+}
+
+static void do_del_bl_work(cors_nrtk_t *nrtk)
+{
+    while (!QUEUE_EMPTY(&nrtk->delbl_queue)) {
+        uv_mutex_lock(&nrtk->delbl_lock);
+
+        QUEUE *q=QUEUE_HEAD(&nrtk->delbl_queue);
+        nrtk_del_bl_t *data=QUEUE_DATA(q,nrtk_del_bl_t,q);
+        QUEUE_REMOVE(q);
+        uv_mutex_unlock(&nrtk->delbl_lock);
+        nrtk_del_bl(nrtk,data);
+    }
+}
+
+static void do_upd_bl_work(cors_nrtk_t *nrtk)
+{
+    while (!QUEUE_EMPTY(&nrtk->updbl_queue)) {
+        uv_mutex_lock(&nrtk->updbl_lock);
+
+        QUEUE *q=QUEUE_HEAD(&nrtk->updbl_queue);
+        nrtk_upd_bl_t *data=QUEUE_DATA(q,nrtk_upd_bl_t,q);
+        QUEUE_REMOVE(q);
+        uv_mutex_unlock(&nrtk->updbl_lock);
+        nrtk_upd_bl(nrtk,data);
+    }
+}
+
+static int subnet_time_sync(cors_nrtk_t *nrtk, cors_master_sta_t *vt, rtk_t **rtk, obs_t **mobs)
 {
     gtime_t time_cur={0};
     cors_dtrig_edge_q_t *eq,*tt;
@@ -446,13 +539,16 @@ static void nrtk_thread(void *nrtk_arg)
     set_thread_rt_priority();
 
     while (nrtk->state) {
+        uv_sleep(1);
         do_subnet_work    (nrtk);
         do_add_source_work(nrtk);
         do_del_source_work(nrtk);
+        do_add_bl_work    (nrtk);
+        do_del_bl_work    (nrtk);
+        do_upd_bl_work    (nrtk);
         do_add_vsta_work  (nrtk);
         do_del_vsta_work  (nrtk);
     }
-    free_nrtk(nrtk);
 }
 
 extern int cors_nrtk_start(cors_nrtk_t *nrtk, cors_t *cors)
@@ -471,23 +567,20 @@ extern int cors_nrtk_start(cors_nrtk_t *nrtk, cors_t *cors)
 extern void cors_nrtk_close(cors_nrtk_t *nrtk)
 {
     nrtk->state=0;
-    uv_thread_join(&nrtk->thread);
-}
 
-static nrtk_add_source_t* new_add_source(int srcid, const double *pos)
-{
-    nrtk_add_source_t *data=calloc(1,sizeof(*data));
-    data->srcid=srcid;
-    matcpy(data->pos,pos,1,3);
-    return data;
+    uv_thread_join(&nrtk->thread);
+    free_nrtk(nrtk);
 }
 
 extern void cors_nrtk_add_source(cors_nrtk_t *nrtk, int srcid, const double *pos)
 {
     if (nrtk->state<=0) return;
+    if (norm(pos,3)<=0) return;
 
     uv_mutex_lock(&nrtk->addsrc_lock);
-    nrtk_add_source_t *data=new_add_source(srcid,pos);
+    nrtk_add_source_t *data=calloc(1,sizeof(*data));
+    data->srcid=srcid;
+    matcpy(data->pos,pos,1,3);
     QUEUE_INSERT_TAIL(&nrtk->addsrc_queue,&data->q);
     uv_mutex_unlock(&nrtk->addsrc_lock);
 }
@@ -497,7 +590,7 @@ extern void cors_nrtk_del_source(cors_nrtk_t *nrtk, int srcid)
     if (nrtk->state<=0) return;
 
     uv_mutex_lock(&nrtk->delsrc_lock);
-    nrtk_delete_source_t *data=calloc(1,sizeof(*data));
+    nrtk_del_source_t *data=calloc(1,sizeof(*data));
     data->srcid=srcid;
     QUEUE_INSERT_TAIL(&nrtk->delsrc_queue,&data->q);
     uv_mutex_unlock(&nrtk->delsrc_lock);
@@ -505,37 +598,53 @@ extern void cors_nrtk_del_source(cors_nrtk_t *nrtk, int srcid)
 
 extern void cors_nrtk_del_baseline(cors_nrtk_t *nrtk, int base_srcid, int rover_srcid)
 {
-    cors_dtrig_net_t *dtrignet=&nrtk->dtrig_net;
-    cors_srtk_t *s,*t;
-
     if (base_srcid<=0||rover_srcid<=0) return;
-    cors_dtrignet_del_edge(dtrignet,base_srcid,rover_srcid);
+    if (!nrtk) return;
 
-    HASH_ITER(hh,nrtk->srtk,s,t) {
-        cors_srtk_del_baseline(s,base_srcid,rover_srcid);
-    }
+    uv_mutex_lock(&nrtk->delbl_lock);
+    nrtk_del_bl_t *data=calloc(1,sizeof(*data));
+    data->base_srcid=base_srcid;
+    data->rover_srcid=rover_srcid;
+
+    QUEUE_INSERT_TAIL(&nrtk->delbl_queue,&data->q);
+    uv_mutex_unlock(&nrtk->delbl_lock);
 }
 
 extern void cors_nrtk_upd_baseline(cors_nrtk_t *nrtk, cors_baseline_t *bl, int base_srcid, int rover_srcid)
 {
     if (base_srcid<=0||rover_srcid<=0) return;
     if (!nrtk) return;
-    cors_dtrignet_upd_edge(&nrtk->dtrig_net,bl,base_srcid,rover_srcid);
+    if (nrtk->state<=0) return;
+
+    uv_mutex_lock(&nrtk->updbl_lock);
+    nrtk_upd_bl_t *data=calloc(1,sizeof(*data));
+    data->base_srcid=base_srcid;
+    data->rover_srcid=rover_srcid;
+    data->bl=bl;
+
+    QUEUE_INSERT_TAIL(&nrtk->updbl_queue,&data->q);
+    uv_mutex_unlock(&nrtk->updbl_lock);
 }
 
 extern void cors_nrtk_add_baseline(cors_nrtk_t *nrtk, int base_srcid, int rover_srcid)
 {
     if (base_srcid<=0||rover_srcid<=0) return;
     if (!nrtk) return;
+    if (nrtk->state<=0) return;
 
-    cors_dtrig_net_t *dtrignet=&nrtk->dtrig_net;
-    cors_dtrignet_add_edge(dtrignet,base_srcid,rover_srcid);
-    nrtk_add_baseline(nrtk,base_srcid,rover_srcid);
+    uv_mutex_lock(&nrtk->addbl_lock);
+    nrtk_add_bl_t *data=calloc(1,sizeof(*data));
+    data->base_srcid=base_srcid;
+    data->rover_srcid=rover_srcid;
+
+    QUEUE_INSERT_TAIL(&nrtk->addbl_queue,&data->q);
+    uv_mutex_unlock(&nrtk->addbl_lock);
 }
 
 extern void cors_nrtk_add_vsta(cors_nrtk_t *nrtk, const char *name, const double *pos)
 {
-    if (nrtk->state<=0||norm(pos,3)<=0.0||!strcmp(name,"")) return;
+    if (nrtk->state<=0) return;
+    if (norm(pos,3)<=0.0||!strcmp(name,"")) return;
 
     uv_mutex_lock(&nrtk->addvsta_lock);
     nrtk_add_vsta_t *data=calloc(1,sizeof(*data));

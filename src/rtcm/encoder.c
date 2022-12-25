@@ -1,5 +1,5 @@
 /*------------------------------------------------------------------------------
- * encoder.c: RTCM encoder functions for CORS
+ * decoder.c: RTCM encoder functions for CORS
  *
  * author  : sujinglan
  * version : $Revision: 1.1 $ $Date: 2008/07/17 21:48:06 $

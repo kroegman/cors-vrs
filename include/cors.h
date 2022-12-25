@@ -172,6 +172,7 @@ typedef struct cors_stas {
 } cors_stas_t;
 
 typedef struct cors_pnt {
+    int state;
     uv_thread_t thread;
     uv_mutex_t lock_tbl,qlock;
     uv_timer_t *timer_stat;
@@ -351,7 +352,7 @@ typedef struct cors_baselines {
 
 typedef struct cors_srtk {
     uv_thread_t thread[2];
-    int state,ID;
+    int state[2],ID;
 
     uv_mutex_t addbl_lock;
     uv_mutex_t delbl_lock;
@@ -418,6 +419,8 @@ typedef struct cors_nrtk {
     uv_thread_t thread;
     uv_mutex_t addsrc_lock,delsrc_lock;
     uv_mutex_t addvsta_lock,delvsta_lock;
+    uv_mutex_t addbl_lock,delbl_lock;
+    uv_mutex_t updbl_lock;
 
     int state;
     cors_dtrig_net_t dtrig_net;
@@ -425,6 +428,8 @@ typedef struct cors_nrtk {
     struct cors* cors;
     QUEUE addvsta_queue,delvsta_queue;
     QUEUE addsrc_queue,delsrc_queue;
+    QUEUE addbl_queue,delbl_queue;
+    QUEUE updbl_queue;
 } cors_nrtk_t;
 
 typedef struct cors_vrs_sta {

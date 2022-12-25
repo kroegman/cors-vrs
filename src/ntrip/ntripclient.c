@@ -14,7 +14,7 @@
 #define NTRIP_RSP_ERROR_PASSED    "ERROR - Bad Password\r\n"
 #define NTRIP_RSP_ERROR_MOUNTP    "ERROR - Bad Mountpoint\r\n"
 
-#define ENA_RAW_LOG   1
+#define ENA_RAW_LOG   0
 #define ENA_ERCONN    1
 
 static int reqntrip_cli(cors_ntrip_client_t *cli, char *req_msg)

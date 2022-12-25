@@ -21,9 +21,9 @@ static void set_thread_rt_priority()
 #endif
 }
 
+static int mID=0;
 static int generate_source_id()
 {
-    static int mID=0;
     return ++mID;
 }
 
@@ -171,6 +171,7 @@ extern void cors_ntrip_close(cors_ntrip_t *ntrip)
     uv_thread_join(&ntrip->thread);
     cors_ntrip_caster_t *c,*t;
     HASH_ITER(hh,ntrip->ctr_tbl,c,t) cors_ntrip_caster_close(c);
+    mID=0;
     free_ntrip(ntrip);
 }
 

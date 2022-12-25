@@ -284,7 +284,7 @@ extern void cors_add_source(cors_t *cors, const char *name, const char *addr, in
 
     cors_ntrip_add_source(&cors->ntrip,info);
     cors_nrtk_add_source(&cors->nrtk,info->ID,
-                         info->pos);
+            info->pos);
 }
 
 extern void cors_del_source(cors_t *cors, const char *name)
@@ -326,6 +326,8 @@ extern void cors_basenet_del_baseline(cors_t *cors, const char *base, const char
     cors_nrtk_t *nrtk=&cors->nrtk;
     cors_ntrip_source_info_t *info_tbl=cors->ntrip.info_tbl[0];
 
+    if (!nrtk->state) return;
+
     HASH_FIND_STR(info_tbl,rover,r);
     HASH_FIND_STR(info_tbl,base,b);
     if (!r||!b) return;
@@ -337,6 +339,8 @@ extern void cors_basenet_add_baseline(cors_t *cors, const char *base, const char
     cors_ntrip_source_info_t *r,*b;
     cors_nrtk_t *nrtk=&cors->nrtk;
     cors_ntrip_source_info_t *info_tbl=cors->ntrip.info_tbl[0];
+
+    if (!nrtk->state) return;
 
     HASH_FIND_STR(info_tbl,rover,r);
     HASH_FIND_STR(info_tbl,base,b);

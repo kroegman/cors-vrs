@@ -401,6 +401,7 @@ extern void cors_dtrignet_del_edge(cors_dtrig_net_t *dtrignet, int srcid1, int s
     HASH_FIND_STR(dtrignet->edges,id,e);
     if (!e) return;
     del_edge_prc(dtrignet->vertexs,&dtrignet->edges,e,v1,v2);
+    upd_dtrig_edge(dtrignet);
 }
 
 extern void cors_dtrignet_upd_edge(cors_dtrig_net_t *dtrig_net, cors_baseline_t *bl, int base_srcid, int rover_srcid)

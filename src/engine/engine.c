@@ -321,7 +321,6 @@ static void prsourceinfo_prc(vt_t *vt, cors_ntrip_source_info_t *s)
 {
     char pos_str[64]={0};
 
-
     if (norm(s->pos,3)) {
         sprintf(pos_str,"%8.3lf,%8.3lf,%8.3lf",s->pos[0],s->pos[1],s->pos[2]);
     }
@@ -711,13 +710,13 @@ static void cmd_showbls(char **args, int narg, vt_t *vt)
         HASH_ITER(hh,s->bls.data,b,t) {
             if (!b->sol) continue;
             time2str(b->time,tbuf,3);
-            vt_printf(vt,"%s: %3d->%3d stat=%6s\n",tbuf,b->base_srcid,b->rover_srcid,solstr[b->sol->rtk.sol.stat]);
+            vt_printf(vt,"%s: %3d->%3d stat=%6s bl=%6.0lf KM\n",tbuf,b->base_srcid,b->rover_srcid,solstr[b->sol->rtk.sol.stat],norm(b->sol->rtk.bl,3)/1E3);
         }
     }
     HASH_ITER(hh,cors.srtk.bls.data,b,t) {
         if (!b->sol) continue;
         time2str(b->time,tbuf,3);
-        vt_printf(vt,"%s: %3d->%3d stat=%6s\n",tbuf,b->base_srcid,b->rover_srcid,solstr[b->sol->rtk.sol.stat]);
+        vt_printf(vt,"%s: %3d->%3d stat=%6s bl=%6.0lf KM\n",tbuf,b->base_srcid,b->rover_srcid,solstr[b->sol->rtk.sol.stat],norm(b->sol->rtk.bl,3)/1E3);
     }
 }
 
