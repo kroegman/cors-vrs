@@ -260,7 +260,7 @@ static void del_baseline_work(cors_srtk_t *srtk)
     while (!QUEUE_EMPTY(&srtk->delbl_queue)) {
 
         uv_mutex_lock(&srtk->delbl_lock);
-        QUEUE *q=QUEUE_HEAD(&srtk->delbl_queue[0]);
+        QUEUE *q=QUEUE_HEAD(&srtk->delbl_queue);
         del_baseline_t *del=QUEUE_DATA(q,del_baseline_t,q);
         QUEUE_REMOVE(q);
         uv_mutex_unlock(&srtk->delbl_lock);
