@@ -30,7 +30,7 @@ cors-engine commands:
 > showdtrigs
 
 9. show cors base station subnet
-> showdtrigs
+> showsubnet
 
 10. add ntripagnent user
 > adduser username userpassword
@@ -49,7 +49,7 @@ cors-engine commands:
 > delvsta name
 
 15. show VRS station
-> showvsta
+> showvstas
 
 
 
