@@ -12,6 +12,7 @@ cors-engine commands:
 3. add source 
 > addsource sourcename IP port ntripuser ntripuserpassword ntripsourcemountpoint sourcelatitude(deg) sourcelongitude(deg) sourceheight(m) sourcetype(M:eph+obs,E:eph,O:obs)
 >> eg:  A001 127.0.0.1 8002 ntripuser,ntrip@test A001 37.64052108 116.92379211 63.876 M
+
 >> eg:  A001 127.0.0.1 8002 ntripuser,ntrip@test A001 37.64052108 116.92379211 63.876 O
 
 4. delete source
